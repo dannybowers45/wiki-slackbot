@@ -12,7 +12,7 @@ services:
       - SLACK_CLIENT_SECRET=${SLACK_CLIENT_SECRET}
       - APP_BASE_URL=${APP_BASE_URL:-http://localhost:8000}
       - SECRET_KEY=${SECRET_KEY}
-      - DATABASE_URL=sqlite:///./wikipedia_bot.db
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./wikipedia_bot.db}
       - WIKIPEDIA_API_URL=https://en.wikipedia.org/api/rest_v1
     volumes:
       - ./data:/app/data
