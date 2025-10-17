@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q&A Logs - Wikipedia Slackbot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+        
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .nav-links a {
+            color: #666;
+            text-decoration: none;
+            margin-left: 1rem;
+        }
+        
+        .nav-links a:hover {
+            color: #667eea;
+        }
+        
+        .page-title {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: #333;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            color: #666;
+            margin-top: 0.5rem;
+        }
+        
+        .qa-list {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        
+        .qa-item {
+            border-bottom: 1px solid #eee;
+            padding: 1.5rem;
+        }
+        
+        .qa-item:last-child {
+            border-bottom: none;
+        }
+        
+        .qa-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+        
+        .qa-meta {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .qa-question {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+        }
+        
+        .qa-answer {
+            color: #555;
+            margin-bottom: 1rem;
+            line-height: 1.6;
+        }
+        
+        .qa-citations {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .qa-citations h4 {
+            color: #333;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .citation-list {
+            list-style: none;
+        }
+        
+        .citation-item {
+            margin-bottom: 0.5rem;
+        }
+        
+        .citation-item a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .citation-item a:hover {
+            text-decoration: underline;
+        }
+        
+        .citation-snippet {
+            font-size: 0.8rem;
+            color: #666;
+            font-style: italic;
+            margin-top: 0.25rem;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }
+        
+        .empty-state h3 {
+            margin-bottom: 1rem;
+            color: #333;
+        }
+        
+        .timestamp {
+            font-size: 0.8rem;
+            color: #999;
+        }
+        
+        .team-badge {
+            background: #667eea;
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">📚 Wikipedia Q&A Bot</div>
+                <div class="nav-links">
+                    <a href="/">Home</a>
+                    <a href="/logs">Logs</a>
+                    <a href="/health">Health</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h1 class="page-title">Q&A Logs</h1>
+        
+        {% if qa_logs %}
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number">{{ qa_logs|length }}</div>
+                <div class="stat-label">Total Questions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ qa_logs|selectattr('citations')|list|length }}</div>
+                <div class="stat-label">With Citations</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ qa_logs|selectattr('thread_ts')|list|length }}</div>
+                <div class="stat-label">Thread Responses</div>
+            </div>
+        </div>
+        
+        <div class="qa-list">
+            {% for qa in qa_logs %}
+            <div class="qa-item">
+                <div class="qa-header">
+                    <div class="qa-meta">
+                        <span class="timestamp">{{ qa.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+                        <span class="team-badge">{{ qa.team_name }}</span>
+                    </div>
+                </div>
+                
+                <div class="qa-question">
+                    <strong>Q:</strong> {{ qa.question }}
+                </div>
+                
+                <div class="qa-answer">
+                    <strong>A:</strong> {{ qa.answer }}
+                </div>
+                
+                {% if qa.citations %}
+                <div class="qa-citations">
+                    <h4>Sources:</h4>
+                    {% set citations = qa.citations|from_json %}
+                    <ul class="citation-list">
+                        {% for citation in citations %}
+                        <li class="citation-item">
+                            <a href="{{ citation.url }}" target="_blank">{{ citation.title }}</a>
+                            {% if citation.snippet %}
+                            <div class="citation-snippet">{{ citation.snippet[:100] }}{% if citation.snippet|length > 100 %}...{% endif %}</div>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                
+                <div class="qa-meta" style="margin-top: 1rem;">
+                    <small>
+                        User: {{ qa.user_id }} | 
+                        Channel: {{ qa.channel_id }}
+                        {% if qa.thread_ts %} | Thread Response{% endif %}
+                        {% if qa.conversation_id %} | Conversation: {{ qa.conversation_id[:8] }}...{% endif %}
+                    </small>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <h3>No Q&A logs yet</h3>
+            <p>Once users start asking questions, they'll appear here.</p>
+            <p><a href="/">Install the bot</a> to get started!</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
