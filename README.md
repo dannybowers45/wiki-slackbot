@@ -51,7 +51,7 @@ A FastAPI web application with a Slack bot that answers questions using Wikipedi
 
 1. Go to "Event Subscriptions"
 2. Enable Events: On
-3. Request URL: `http://localhost:8000/slack/events`
+3. Request URL: `https://danny-bowers-wikipedia-slackbot-production.up.railway.app//slack/events`
 4. Subscribe to bot events:
    - `app_mention`
    - `message.im`
@@ -160,7 +160,6 @@ wikipedia-slackbot/
 │   ├── templates/           # HTML templates
 │   │   ├── index.html
 │   │   └── logs.html
-│   ├── static/              # Static files
 │   └── tests/               # Test suite
 ├── requirements.txt
 ├── Makefile
@@ -197,6 +196,27 @@ pytest app/tests/ --cov=app --cov-report=html
    - Configure logging/monitoring
 
 
+### Railway Deployment
+
+This project is ready for Railway with auto-deploy on push.
+
+1. In Railway, add the service from your GitHub repo.
+2. Add environment variables in Railway:
+   - `SLACK_BOT_TOKEN`
+   - `SLACK_SIGNING_SECRET`
+   - `SLACK_CLIENT_ID`
+   - `SLACK_CLIENT_SECRET`
+   - `SECRET_KEY`
+   - `APP_BASE_URL` → e.g. `https://<your-railway-subdomain>.up.railway.app`
+   - `DATABASE_URL` → from your Railway Postgres plugin
+3. Ensure your Slack app is configured to use:
+   - Redirect URL: `${APP_BASE_URL}/oauth/callback`
+   - Slash command URL: `${APP_BASE_URL}/slack/commands`
+   - Event request URL: `${APP_BASE_URL}/slack/events`
+4. The `Procfile` runs: `uvicorn app.main:app --host 0.0.0.0 --port ${PORT}` (Railway sets `PORT`).
+5. This normalizes `postgres://` to `postgresql+psycopg://` automatically.
+
+
 ## Architecture
 
 ### Components
@@ -205,7 +225,7 @@ pytest app/tests/ --cov=app --cov-report=html
 2. **Slack Bot**: Processes commands, mentions, and DMs using Slack Bolt
 3. **Wikipedia Client**: Searches and fetches content from Wikipedia API
 4. **Q&A Service**: Synthesizes answers and manages conversation context
-5. **Database**: SQLite for storing installations, Q&A logs, and conversation state
+5. **Database**: Postgres for storing installations, Q&A logs, and conversation state
 
 ### Data Flow
 

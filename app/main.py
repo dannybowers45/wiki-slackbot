@@ -21,8 +21,10 @@ app = FastAPI(
     description="A Slack bot that answers questions using Wikipedia with citations",
 )
 
-# Create database tables
-create_db_and_tables()
+# Create database tables on startup (Railway safe)
+@app.on_event("startup")
+async def on_startup():
+    create_db_and_tables()
 
 # Setup templates and static files
 templates = Jinja2Templates(directory="app/templates")
