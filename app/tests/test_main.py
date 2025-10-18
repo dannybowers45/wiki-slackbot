@@ -1,14 +1,18 @@
 import pytest
+from datetime import datetime
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.main import app
-from app.models import Installation, QARequest
+from app.db import get_session
 
 
 class TestMainApp:
     @pytest.fixture
     def client(self):
-        return TestClient(app)
+        app.dependency_overrides = {}
+        with TestClient(app) as test_client:
+            yield test_client
+        app.dependency_overrides = {}
     
     def test_index_page(self, client):
         """Test home page loads correctly"""
@@ -25,27 +29,26 @@ class TestMainApp:
             
             response = client.get("/install", follow_redirects=False)
             
-            assert response.status_code == 302
+            assert response.status_code == 307
             assert "slack.com/oauth/v2/authorize" in response.headers["location"]
     
     def test_oauth_callback_success(self, client):
         """Test successful OAuth callback"""
         with patch('app.main.slack_oauth') as mock_oauth:
-            mock_oauth.handle_oauth_callback.return_value = {
+            mock_oauth.handle_oauth_callback = AsyncMock(return_value={
                 "success": True,
                 "team_id": "T123456",
                 "team_name": "Test Team",
                 "bot_user_id": "U123456",
                 "installation_id": 1
-            }
+            })
             
-            # Add state to oauth_states
             with patch('app.main.oauth_states', {"test_state": True}):
                 response = client.get("/oauth/callback?code=test_code&state=test_state")
-                
-                assert response.status_code == 200
-                assert "Installation Successful" in response.text
-                assert "Test Team" in response.text
+            
+        assert response.status_code == 200
+        assert "Installation Successful" in response.text
+        assert "Test Team" in response.text
     
     def test_oauth_callback_missing_params(self, client):
         """Test OAuth callback with missing parameters"""
@@ -68,15 +71,18 @@ class TestMainApp:
     
     def test_logs_page_empty(self, client):
         """Test logs page with no data"""
-        with patch('app.main.get_session') as mock_get_session:
-            mock_session = MagicMock()
-            mock_session.exec.return_value.all.return_value = []
-            mock_get_session.return_value = mock_session
-            
-            response = client.get("/logs")
-            
-            assert response.status_code == 200
-            assert "No Q&A logs yet" in response.text
+        mock_session = MagicMock()
+        mock_session.exec.return_value.all.return_value = []
+
+        def override_session():
+            yield mock_session
+
+        app.dependency_overrides[get_session] = override_session
+
+        response = client.get("/logs")
+
+        assert response.status_code == 200
+        assert "No Q&A logs yet" in response.text
     
     def test_logs_page_with_data(self, client):
         """Test logs page with Q&A data"""
@@ -92,19 +98,22 @@ class TestMainApp:
         mock_qa_request.channel_id = "C123456"
         mock_qa_request.thread_ts = None
         mock_qa_request.conversation_id = None
-        mock_qa_request.created_at = "2023-01-01T00:00:00"
-        
-        with patch('app.main.get_session') as mock_get_session:
-            mock_session = MagicMock()
-            mock_session.exec.return_value.all.return_value = [(mock_qa_request, mock_installation)]
-            mock_get_session.return_value = mock_session
-            
-            response = client.get("/logs")
-            
-            assert response.status_code == 200
-            assert "What is AI?" in response.text
-            assert "AI is artificial intelligence." in response.text
-            assert "Test Team" in response.text
+        mock_qa_request.created_at = datetime(2023, 1, 1, 0, 0, 0)
+
+        mock_session = MagicMock()
+        mock_session.exec.return_value.all.return_value = [(mock_qa_request, mock_installation)]
+
+        def override_session():
+            yield mock_session
+
+        app.dependency_overrides[get_session] = override_session
+
+        response = client.get("/logs")
+
+        assert response.status_code == 200
+        assert "What is AI?" in response.text
+        assert "AI is artificial intelligence." in response.text
+        assert "Test Team" in response.text
     
     def test_api_installations(self, client):
         """Test API installations endpoint"""
@@ -114,20 +123,23 @@ class TestMainApp:
         mock_installation.team_name = "Test Team"
         mock_installation.bot_user_id = "U123456"
         mock_installation.is_active = True
-        mock_installation.created_at = "2023-01-01T00:00:00"
-        
-        with patch('app.main.get_session') as mock_get_session:
-            mock_session = MagicMock()
-            mock_session.exec.return_value.all.return_value = [mock_installation]
-            mock_get_session.return_value = mock_session
-            
-            response = client.get("/api/installations")
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert len(data) == 1
-            assert data[0]["team_id"] == "T123456"
-            assert data[0]["team_name"] == "Test Team"
+        mock_installation.created_at = datetime(2023, 1, 1, 0, 0, 0)
+
+        mock_session = MagicMock()
+        mock_session.exec.return_value.all.return_value = [mock_installation]
+
+        def override_session():
+            yield mock_session
+
+        app.dependency_overrides[get_session] = override_session
+
+        response = client.get("/api/installations")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["team_id"] == "T123456"
+        assert data[0]["team_name"] == "Test Team"
     
     def test_api_qa_requests(self, client):
         """Test API Q&A requests endpoint"""
@@ -140,20 +152,23 @@ class TestMainApp:
         mock_qa_request.channel_id = "C123456"
         mock_qa_request.thread_ts = None
         mock_qa_request.conversation_id = None
-        mock_qa_request.created_at = "2023-01-01T00:00:00"
-        
-        with patch('app.main.get_session') as mock_get_session:
-            mock_session = MagicMock()
-            mock_session.exec.return_value.all.return_value = [mock_qa_request]
-            mock_get_session.return_value = mock_session
-            
-            response = client.get("/api/qa-requests")
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert len(data) == 1
-            assert data[0]["question"] == "What is AI?"
-            assert data[0]["answer"] == "AI is artificial intelligence."
+        mock_qa_request.created_at = datetime(2023, 1, 1, 0, 0, 0)
+
+        mock_session = MagicMock()
+        mock_session.exec.return_value.all.return_value = [mock_qa_request]
+
+        def override_session():
+            yield mock_session
+
+        app.dependency_overrides[get_session] = override_session
+
+        response = client.get("/api/qa-requests")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["question"] == "What is AI?"
+        assert data[0]["answer"] == "AI is artificial intelligence."
     
     def test_health_check(self, client):
         """Test health check endpoint"""

@@ -1,12 +1,13 @@
+import asyncio
 import pytest
-import json
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+import app.slack_app as slack_app
 from app.slack_app import verify_slack_signature, _store_qa_request
-from app.models import Installation
 
 
 class TestSlackApp:
-    def test_verify_slack_signature_valid(self):
+    @pytest.mark.asyncio
+    async def test_verify_slack_signature_valid(self, monkeypatch):
         """Test valid Slack signature verification"""
         import time
         import hmac
@@ -30,38 +31,45 @@ class TestSlackApp:
             "X-Slack-Request-Timestamp": timestamp,
             "X-Slack-Signature": signature
         }
-        mock_request.body.return_value = body.encode()
-        
-        with patch.dict('os.environ', {'SLACK_SIGNING_SECRET': signing_secret}):
-            result = verify_slack_signature(mock_request)
-            assert result is True
-    
-    def test_verify_slack_signature_invalid(self):
+        mock_request.body = AsyncMock(return_value=body.encode())
+
+        monkeypatch.setattr(slack_app, "SLACK_SIGNING_SECRET", signing_secret, raising=False)
+
+        result = await verify_slack_signature(mock_request)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_verify_slack_signature_invalid(self, monkeypatch):
         """Test invalid Slack signature verification"""
         mock_request = MagicMock()
         mock_request.headers = {
             "X-Slack-Request-Timestamp": "1234567890",
             "X-Slack-Signature": "v0=invalid_signature"
         }
-        mock_request.body.return_value = b'{"test": "data"}'
-        
-        with patch.dict('os.environ', {'SLACK_SIGNING_SECRET': 'test_secret'}):
-            result = verify_slack_signature(mock_request)
-            assert result is False
-    
-    def test_verify_slack_signature_missing_headers(self):
+        mock_request.body = AsyncMock(return_value=b'{"test": "data"}')
+
+        monkeypatch.setattr(slack_app, "SLACK_SIGNING_SECRET", "test_secret", raising=False)
+
+        result = await verify_slack_signature(mock_request)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_verify_slack_signature_missing_headers(self, monkeypatch):
         """Test signature verification with missing headers"""
         mock_request = MagicMock()
         mock_request.headers = {}
-        mock_request.body.return_value = b'{"test": "data"}'
-        
-        result = verify_slack_signature(mock_request)
+        mock_request.body = AsyncMock(return_value=b'{"test": "data"}')
+
+        monkeypatch.setattr(slack_app, "SLACK_SIGNING_SECRET", "test_secret", raising=False)
+
+        result = await verify_slack_signature(mock_request)
         assert result is False
-    
-    def test_verify_slack_signature_old_timestamp(self):
+
+    @pytest.mark.asyncio
+    async def test_verify_slack_signature_old_timestamp(self, monkeypatch):
         """Test signature verification with old timestamp"""
         import time
-        
+
         old_timestamp = str(int(time.time()) - 400)  # 400 seconds ago
         
         mock_request = MagicMock()
@@ -69,32 +77,39 @@ class TestSlackApp:
             "X-Slack-Request-Timestamp": old_timestamp,
             "X-Slack-Signature": "v0=test_signature"
         }
-        mock_request.body.return_value = b'{"test": "data"}'
-        
-        with patch.dict('os.environ', {'SLACK_SIGNING_SECRET': 'test_secret'}):
-            result = verify_slack_signature(mock_request)
-            assert result is False
-    
-    def test_verify_slack_signature_no_secret(self):
+        mock_request.body = AsyncMock(return_value=b'{"test": "data"}')
+
+        monkeypatch.setattr(slack_app, "SLACK_SIGNING_SECRET", "test_secret", raising=False)
+
+        result = await verify_slack_signature(mock_request)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_verify_slack_signature_no_secret(self, monkeypatch):
         """Test signature verification when no secret is configured"""
         mock_request = MagicMock()
         mock_request.headers = {
             "X-Slack-Request-Timestamp": "1234567890",
             "X-Slack-Signature": "v0=test_signature"
         }
-        mock_request.body.return_value = b'{"test": "data"}'
-        
-        with patch.dict('os.environ', {}, clear=True):
-            result = verify_slack_signature(mock_request)
-            assert result is True  # Should skip verification when no secret
-    
-    def test_store_qa_request_success(self):
+        mock_request.body = AsyncMock(return_value=b'{"test": "data"}')
+
+        monkeypatch.setattr(slack_app, "SLACK_SIGNING_SECRET", None, raising=False)
+
+        result = await verify_slack_signature(mock_request)
+        assert result is True  # Should skip verification when no secret
+
+    @pytest.mark.asyncio
+    async def test_store_qa_request_success(self, monkeypatch):
         """Test successful Q&A request storage"""
-        with patch('app.slack_app.get_db_session') as mock_get_session:
-            mock_session = MagicMock()
-            mock_get_session.return_value = mock_session
-            
-            _store_qa_request(
+        mock_session = MagicMock()
+
+        async def immediate(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with patch('app.slack_app.get_db_session', return_value=mock_session), \
+             patch('app.slack_app.asyncio.to_thread', side_effect=immediate):
+            await _store_qa_request(
                 installation_id=1,
                 question="What is AI?",
                 answer="AI is artificial intelligence.",
@@ -104,20 +119,23 @@ class TestSlackApp:
                 thread_ts="1234567890.123456",
                 conversation_id="conv_123"
             )
-            
-            mock_session.add.assert_called_once()
-            mock_session.commit.assert_called_once()
-            mock_session.close.assert_called_once()
-    
-    def test_store_qa_request_error(self):
+
+        mock_session.add.assert_called_once()
+        mock_session.commit.assert_called_once()
+        mock_session.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_store_qa_request_error(self, monkeypatch):
         """Test Q&A request storage with error"""
-        with patch('app.slack_app.get_db_session') as mock_get_session:
-            mock_session = MagicMock()
-            mock_session.add.side_effect = Exception("Database error")
-            mock_get_session.return_value = mock_session
-            
-            # Should not raise exception
-            _store_qa_request(
+        mock_session = MagicMock()
+        mock_session.add.side_effect = Exception("Database error")
+
+        async def immediate(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with patch('app.slack_app.get_db_session', return_value=mock_session), \
+             patch('app.slack_app.asyncio.to_thread', side_effect=immediate):
+            await _store_qa_request(
                 installation_id=1,
                 question="What is AI?",
                 answer="AI is artificial intelligence.",
@@ -125,9 +143,9 @@ class TestSlackApp:
                 user_id="U123456",
                 channel_id="C123456"
             )
-            
-            mock_session.rollback.assert_called_once()
-            mock_session.close.assert_called_once()
+
+        mock_session.rollback.assert_called_once()
+        mock_session.close.assert_called_once()
 
 
 class TestSlackHandlers:
@@ -143,19 +161,19 @@ class TestSlackHandlers:
         installation.is_active = True
         return installation
     
-    def test_handle_ask_command_missing_installation(self):
-        """Test /ask command when app not installed"""
+    def test_handle_wiki_command_missing_installation(self):
+        """Test /wiki command when app not installed"""
         # This would require mocking the Slack Bolt framework
         # For now, just test the concept
         pass
     
-    def test_handle_ask_command_empty_question(self):
-        """Test /ask command with empty question"""
+    def test_handle_wiki_command_empty_question(self):
+        """Test /wiki command with empty question"""
         # This would require mocking the Slack Bolt framework
         pass
     
-    def test_handle_ask_command_success(self):
-        """Test successful /ask command"""
+    def test_handle_wiki_command_success(self):
+        """Test successful /wiki command"""
         # This would require mocking the Slack Bolt framework
         pass
     
