@@ -196,27 +196,6 @@ pytest app/tests/ --cov=app --cov-report=html
    - Configure logging/monitoring
 
 
-### Railway Deployment
-
-This project is ready for Railway with auto-deploy on push.
-
-1. In Railway, add the service from your GitHub repo.
-2. Add environment variables in Railway:
-   - `SLACK_BOT_TOKEN`
-   - `SLACK_SIGNING_SECRET`
-   - `SLACK_CLIENT_ID`
-   - `SLACK_CLIENT_SECRET`
-   - `SECRET_KEY`
-   - `APP_BASE_URL` → e.g. `https://<your-railway-subdomain>.up.railway.app`
-   - `DATABASE_URL` → from your Railway Postgres plugin
-3. Ensure your Slack app is configured to use:
-   - Redirect URL: `${APP_BASE_URL}/oauth/callback`
-   - Slash command URL: `${APP_BASE_URL}/slack/commands`
-   - Event request URL: `${APP_BASE_URL}/slack/events`
-4. The `Procfile` runs: `uvicorn app.main:app --host 0.0.0.0 --port ${PORT}` (Railway sets `PORT`).
-5. This normalizes `postgres://` to `postgresql+psycopg://` automatically.
-
-
 ## Architecture
 
 ### Components
