@@ -1,6 +1,6 @@
 import pytest
 import httpx
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.wiki_client import WikipediaClient, WikipediaArticle, SearchResult
 
 
@@ -29,8 +29,8 @@ class TestWikipediaClient:
             }
         }
         
-        with patch.object(client.client, 'get') as mock_get:
-            mock_response = AsyncMock()
+        with patch.object(client.client, 'get', new=AsyncMock()) as mock_get:
+            mock_response = MagicMock()
             mock_response.json.return_value = mock_response_data
             mock_response.raise_for_status.return_value = None
             mock_get.return_value = mock_response
@@ -48,8 +48,8 @@ class TestWikipediaClient:
         """Test search with no results"""
         mock_response_data = {"query": {"search": []}}
         
-        with patch.object(client.client, 'get') as mock_get:
-            mock_response = AsyncMock()
+        with patch.object(client.client, 'get', new=AsyncMock()) as mock_get:
+            mock_response = MagicMock()
             mock_response.json.return_value = mock_response_data
             mock_response.raise_for_status.return_value = None
             mock_get.return_value = mock_response
@@ -61,7 +61,7 @@ class TestWikipediaClient:
     @pytest.mark.asyncio
     async def test_search_error(self, client):
         """Test search with API error"""
-        with patch.object(client.client, 'get') as mock_get:
+        with patch.object(client.client, 'get', new=AsyncMock()) as mock_get:
             mock_get.side_effect = httpx.HTTPError("API Error")
             
             results = await client.search("test query")
@@ -90,14 +90,14 @@ class TestWikipediaClient:
             ]
         }
         
-        with patch.object(client.client, 'get') as mock_get:
+        with patch.object(client.client, 'get', new=AsyncMock()) as mock_get:
             # Mock summary response
-            mock_summary_response = AsyncMock()
+            mock_summary_response = MagicMock()
             mock_summary_response.json.return_value = mock_summary_data
             mock_summary_response.raise_for_status.return_value = None
             
             # Mock sections response
-            mock_sections_response = AsyncMock()
+            mock_sections_response = MagicMock()
             mock_sections_response.json.return_value = mock_sections_data
             mock_sections_response.raise_for_status.return_value = None
             
@@ -118,8 +118,8 @@ class TestWikipediaClient:
         """Test article retrieval for non-existent article"""
         mock_response_data = {"error": "Not found"}
         
-        with patch.object(client.client, 'get') as mock_get:
-            mock_response = AsyncMock()
+        with patch.object(client.client, 'get', new=AsyncMock()) as mock_get:
+            mock_response = MagicMock()
             mock_response.json.return_value = mock_response_data
             mock_response.raise_for_status.return_value = None
             mock_get.return_value = mock_response
@@ -141,8 +141,8 @@ class TestWikipediaClient:
             }
         }
         
-        with patch.object(client.client, 'get') as mock_get:
-            mock_response = AsyncMock()
+        with patch.object(client.client, 'get', new=AsyncMock()) as mock_get:
+            mock_response = MagicMock()
             mock_response.json.return_value = mock_response_data
             mock_response.raise_for_status.return_value = None
             mock_get.return_value = mock_response

@@ -7,9 +7,8 @@ A FastAPI web application with a Slack bot that answers questions using Wikipedi
 - **Slack Integration**: OAuth flow for easy installation
 - **Wikipedia Q&A**: Search and synthesize answers from Wikipedia
 - **Citations**: All answers include clickable Wikipedia citations
-- **Multi-turn Conversations**: Follow-up questions in threads with context
-- **Web Interface**: Beautiful HTML interface for installation and logs
-- **Database Logging**: All Q&A interactions stored with timestamps
+- **Web Interface**: HTML interface for installation and logs
+- **Database Logging**: All Q&A interactions stored with timestamps and viewable at <url>/logs 
 - **Security**: Slack signature verification and OAuth state validation
 - **Docker Support**: Easy deployment with Docker and docker-compose
 
@@ -36,21 +35,55 @@ A FastAPI web application with a Slack bot that answers questions using Wikipedi
    pip install -r requirements.txt
    ```
 
-3. **Setup environment**
+3. **Configure Slack Bot**
    ```bash
-   cp env.example .env
-   # Edit .env with your Slack app credentials
+   Basic Information - App Credentials: 
+   Copy Client ID, Client Secret, Signing Secret, 
+   and later the Bot User OAuth token; 
+   place them (plus the generated bot user ID if you want the fallback) into your .env.
+
+   Under Scopes - Bot Token Scopes, add:
+   commands
+   chat:write
+   app_mentions:read
+   channels:history
+
+   Set redirect URL: 
+   https://<your-domain-or-ngrok>/oauth/callback
+
+   Slash Command: Under Features - Slash Commands 
+   create /wiki with Request URL https://<base-url>/slack/commands, 
+   short description (“Ask a question about any topic”), 
+   usage hint (“Wiki: What is machine learning?”), and save.
+
+   Event Subscriptions: Enable, 
+   set Request URL https://<base-url>/slack/events, 
+   subscribe the bot to app_mention and message.im.
+
+   Interactivity & Shortcuts: 
+   Enable with Request URL https://<base-url>/slack/interactive so interactive payloads reach the app.
+
+   OAuth & Permissions:
+   Redirect URLs: add https://<your-domain-or-ngrok>/oauth/callback (match APP_BASE_URL).
+   Bot Token Scopes: commands, chat:write, app_mentions:read, im:history, users:read, team:read.
+
    ```
 
-4. **Run the application**
+4. **Setup environment**
+   ```bash
+   cp env.example .env
+   # Edit .env with your necessary Slack app credentials
+   ```
+
+5. **Run the application**
    ```bash
    make dev
    # or
    uvicorn app.main:app --reload
    ```
 
-5. **Visit the web interface**
-   - Open http://localhost:8000
+6. **Visit the web interface**
+   - Open https server (./start_ngrok.sh)  
    - Click "Connect to Slack" to install the bot
 
 ## Slack App Setup
@@ -68,20 +101,19 @@ A FastAPI web application with a Slack bot that answers questions using Wikipedi
 - `commands` - Add slash commands
 - `chat:write` - Send messages
 - `app_mentions:read` - Listen for mentions
-- `im:history` - Read direct messages
 - `users:read` - Get user information
 
 **Redirect URLs:**
-- Add: `http://localhost:8000/oauth/callback` (development)
+- Add: `https://<ngrok>/oauth/callback` (development)
 - Add: `https://yourdomain.com/oauth/callback` (production)
 
 ### 3. Create Slash Command
 
 1. Go to "Slash Commands" → "Create New Command"
-2. Command: `/ask`
-3. Request URL: `http://localhost:8000/slack/commands`
+2. Command: `/wiki`
+3. Request URL: `https://<ngrok>/slack/commands`
 4. Short Description: "Ask a question about any topic"
-5. Usage Hint: "What is machine learning?"
+5. Usage Hint: "Wiki: What is machine learning?"
 
 ### 4. Enable Event Subscriptions
 
@@ -110,13 +142,7 @@ SLACK_BOT_TOKEN=xoxb-your-bot-token
 SLACK_SIGNING_SECRET=your-signing-secret
 SLACK_CLIENT_ID=your-client-id
 SLACK_CLIENT_SECRET=your-client-secret
-
-# App Configuration
-APP_BASE_URL=http://localhost:8000
-SECRET_KEY=your-secret-key-for-oauth-state
-
-# Database
-DATABASE_URL=sqlite:///./wikipedia_bot.db
+SLACK_BOT_USER_ID=your-bot-user-id # optional fallback for local runs
 
 # Wikipedia API
 WIKIPEDIA_API_URL=https://en.wikipedia.org/api/rest_v1
@@ -126,15 +152,12 @@ WIKIPEDIA_API_URL=https://en.wikipedia.org/api/rest_v1
 
 ### Slack Commands
 
-1. **Slash Command**: `/ask What is machine learning?`
-2. **Mention**: `@Wikipedia Q&A What is artificial intelligence?`
-3. **Direct Message**: Send a message directly to the bot
+1. **Slash Command**: `/wiki What is machine learning?`
+2. **Mention**: `@danny-wiki What is artificial intelligence?`
 
 ### Features
 
 - **Citations**: All answers include Wikipedia sources with clickable links
-- **Thread Context**: Ask follow-up questions in threads for context-aware responses
-- **Multi-turn Conversations**: The bot remembers conversation context
 - **Web Logs**: View all Q&A interactions at `/logs`
 
 ## API Endpoints
@@ -167,6 +190,7 @@ wikipedia-slackbot/
 │   ├── wiki_client.py       # Wikipedia API client
 │   ├── qa.py                # Q&A synthesis logic
 │   ├── oauth.py             # Slack OAuth flow
+│   ├── openai_client.py.    # LLM logic
 │   ├── models.py            # Database models
 │   ├── db.py                # Database connection
 │   ├── templates/           # HTML templates
@@ -213,29 +237,23 @@ pytest app/tests/ --cov=app --cov-report=html
 
 ### Docker Deployment
 
-1. **Build and run with Docker Compose**
-   ```bash
-   docker-compose up -d
-   ```
-
-2. **Environment setup**
+1. **Environment setup**
    ```bash
    # Copy and edit environment file
    cp env.example .env
    # Update with production values
    ```
 
-3. **Production considerations**
-   - Use HTTPS in production
-   - Set up proper SSL certificates
-   - Use a production database (PostgreSQL)
-   - Configure proper logging
-   - Set up monitoring and alerts
+2. **Production considerations**
+   - Use HTTPS in production (place certs in `ssl/` for the nginx profile)
+   - Move to a production database (e.g., PostgreSQL) and update `DATABASE_URL`
+   - Configure logging/monitoring
 
 ### Manual Deployment
 
-1. **Install dependencies**
+1. **Install dependencies in virtual env**
    ```bash
+   python3 -m venv .venv && source .venv/bin/activate
    pip install -r requirements.txt
    ```
 
@@ -243,7 +261,7 @@ pytest app/tests/ --cov=app --cov-report=html
    ```bash
    export SLACK_BOT_TOKEN="your-token"
    export SLACK_SIGNING_SECRET="your-secret"
-   # ... other variables
+   # ... other variables - see env.example
    ```
 
 3. **Run the application**
@@ -267,45 +285,10 @@ pytest app/tests/ --cov=app --cov-report=html
 2. Slack sends event to `/slack/events` or `/slack/commands`
 3. Bot verifies signature and processes request
 4. Wikipedia client searches for relevant articles
-5. Q&A service synthesizes answer with citations
+5. Q&A service passes wikipedia information to openAI API which creates summary
+6. Q&A appends links to summary
 6. Response sent back to Slack
 7. Q&A interaction logged to database
 
-### Security
 
-- **Slack Signature Verification**: All Slack requests verified
-- **OAuth State Validation**: Prevents CSRF attacks
-- **Input Sanitization**: User input cleaned and validated
-- **Rate Limiting**: Built-in FastAPI rate limiting
-- **Error Handling**: Graceful error handling and logging
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run the test suite
-6. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For issues and questions:
-1. Check the [Issues](https://github.com/your-repo/issues) page
-2. Create a new issue with detailed information
-3. Include logs and error messages
-
-## Changelog
-
-### v1.0.0
-- Initial release
-- Slack OAuth integration
-- Wikipedia Q&A with citations
-- Multi-turn conversations
-- Web interface for installation and logs
-- Docker support
-- Comprehensive test suite

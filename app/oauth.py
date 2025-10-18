@@ -32,7 +32,7 @@ class SlackOAuth:
         
         params = {
             "client_id": self.client_id,
-            "scope": "commands,chat:write,app_mentions:read,im:history,users:read",
+            "scope": "commands chat:write app_mentions:read users:read team:read",
             "redirect_uri": f"{self.base_url}/oauth/callback",
             "state": state
         }
@@ -75,10 +75,11 @@ class SlackOAuth:
             response = await client.post(
                 "https://slack.com/api/oauth.v2.access",
                 data={
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "code": code
-                }
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "code": code,
+                "redirect_uri": f"{self.base_url}/oauth/callback",
+                },
             )
             
             if response.status_code != 200:
@@ -90,10 +91,7 @@ class SlackOAuth:
             data = response.json()
             
             if not data.get("ok"):
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"OAuth error: {data.get('error', 'Unknown error')}"
-                )
+                raise HTTPException(status_code=400, detail=f"OAuth error: {data.get('error')}")
             
             return data
     

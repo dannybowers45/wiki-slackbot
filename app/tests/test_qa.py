@@ -49,10 +49,10 @@ class TestQAService:
     @pytest.mark.asyncio
     async def test_answer_question_success(self, qa_service, mock_search_results, mock_articles):
         """Test successful question answering"""
-        with patch.object(qa_service.wiki_client, 'search', return_value=mock_search_results), \
-             patch.object(qa_service.wiki_client, 'get_article', side_effect=mock_articles), \
-             patch.object(qa_service, '_get_conversation_context', return_value=None), \
-             patch.object(qa_service, '_update_conversation_context'):
+        with patch.object(qa_service.wiki_client, 'search', new=AsyncMock(return_value=mock_search_results)), \
+             patch.object(qa_service.wiki_client, 'get_article', new=AsyncMock(side_effect=mock_articles)), \
+             patch.object(qa_service, '_get_conversation_context', new=AsyncMock(return_value=None)), \
+             patch.object(qa_service, '_update_conversation_context', new=AsyncMock()):
             
             answer = await qa_service.answer_question("What is machine learning?")
             
@@ -65,7 +65,7 @@ class TestQAService:
     @pytest.mark.asyncio
     async def test_answer_question_no_results(self, qa_service):
         """Test question answering with no search results"""
-        with patch.object(qa_service.wiki_client, 'search', return_value=[]):
+        with patch.object(qa_service.wiki_client, 'search', new=AsyncMock(return_value=[])):
             answer = await qa_service.answer_question("nonexistent topic")
             
             assert isinstance(answer, QAAnswer)
@@ -75,8 +75,8 @@ class TestQAService:
     @pytest.mark.asyncio
     async def test_answer_question_no_articles(self, qa_service, mock_search_results):
         """Test question answering with search results but no articles"""
-        with patch.object(qa_service.wiki_client, 'search', return_value=mock_search_results), \
-             patch.object(qa_service.wiki_client, 'get_article', return_value=None):
+        with patch.object(qa_service.wiki_client, 'search', new=AsyncMock(return_value=mock_search_results)), \
+             patch.object(qa_service.wiki_client, 'get_article', new=AsyncMock(return_value=None)):
             
             answer = await qa_service.answer_question("What is machine learning?")
             
@@ -241,6 +241,8 @@ class TestQAService:
     @pytest.mark.asyncio
     async def test_close(self, qa_service):
         """Test QA service cleanup"""
-        with patch.object(qa_service.wiki_client, 'close') as mock_close:
+        with patch.object(qa_service.wiki_client, 'close', new=AsyncMock()) as mock_wiki_close, \
+             patch('app.qa.openai_client.close', new=AsyncMock()) as mock_ai_close:
             await qa_service.close()
-            mock_close.assert_called_once()
+            mock_wiki_close.assert_called_once()
+            mock_ai_close.assert_called_once()

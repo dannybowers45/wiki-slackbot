@@ -1,31 +1,36 @@
 import pytest
 import httpx
-from unittest.mock import AsyncMock, patch, MagicMock
+from urllib.parse import urlparse, parse_qs
+from unittest.mock import AsyncMock, MagicMock, patch
+from fastapi import HTTPException
 from app.oauth import SlackOAuth
-from app.models import Installation
 
 
 class TestSlackOAuth:
     @pytest.fixture
     def oauth(self):
-        with patch.dict('os.environ', {
-            'SLACK_CLIENT_ID': 'test_client_id',
-            'SLACK_CLIENT_SECRET': 'test_client_secret',
-            'APP_BASE_URL': 'http://localhost:8000',
-            'SECRET_KEY': 'test_secret_key'
-        }):
+        with patch('app.oauth.SLACK_CLIENT_ID', 'test_client_id'), \
+             patch('app.oauth.SLACK_CLIENT_SECRET', 'test_client_secret'), \
+             patch('app.oauth.APP_BASE_URL', 'http://localhost:8000'), \
+             patch('app.oauth.SECRET_KEY', 'test_secret_key'):
             return SlackOAuth()
     
     def test_generate_oauth_url(self, oauth):
         """Test OAuth URL generation"""
         url, state = oauth.generate_oauth_url()
-        
-        assert "https://slack.com/oauth/v2/authorize" in url
-        assert "client_id=test_client_id" in url
-        assert "scope=commands,chat:write,app_mentions:read,im:history,users:read" in url
-        assert f"redirect_uri={oauth.base_url}/oauth/callback" in url
-        assert "state=" in url
-        assert len(state) > 0
+
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "slack.com"
+        assert parsed.path == "/oauth/v2/authorize"
+        assert query["client_id"][0] == "test_client_id"
+        assert query["redirect_uri"][0] == f"{oauth.base_url}/oauth/callback"
+        scopes = set(query["scope"][0].split())
+        assert scopes == {"commands", "chat:write", "app_mentions:read", "users:read", "team:read"}
+        assert "state" in query
+        assert query["state"][0] == state
     
     @pytest.mark.asyncio
     async def test_handle_oauth_callback_success(self, oauth):
@@ -44,9 +49,9 @@ class TestSlackOAuth:
             }
         }
         
-        with patch.object(oauth, '_exchange_code_for_tokens', return_value=mock_token_data), \
-             patch.object(oauth, '_get_team_info', return_value=mock_team_info), \
-             patch.object(oauth, '_store_installation') as mock_store:
+        with patch.object(oauth, '_exchange_code_for_tokens', new=AsyncMock(return_value=mock_token_data)), \
+             patch.object(oauth, '_get_team_info', new=AsyncMock(return_value=mock_team_info)), \
+             patch.object(oauth, '_store_installation', new=AsyncMock()) as mock_store:
             
             mock_installation = MagicMock()
             mock_installation.id = 1
@@ -63,10 +68,10 @@ class TestSlackOAuth:
     @pytest.mark.asyncio
     async def test_handle_oauth_callback_invalid_state(self, oauth):
         """Test OAuth callback with invalid state"""
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             await oauth.handle_oauth_callback("test_code", "invalid_state", "expected_state")
         
-        assert "Invalid state parameter" in str(exc_info.value)
+        assert exc_info.value.status_code == 400
     
     @pytest.mark.asyncio
     async def test_exchange_code_for_tokens_success(self, oauth):
@@ -81,7 +86,7 @@ class TestSlackOAuth:
         
         with patch('httpx.AsyncClient') as mock_client_class:
             mock_client = AsyncMock()
-            mock_response = AsyncMock()
+            mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = mock_response_data
             mock_client.post.return_value = mock_response
@@ -103,16 +108,17 @@ class TestSlackOAuth:
         
         with patch('httpx.AsyncClient') as mock_client_class:
             mock_client = AsyncMock()
-            mock_response = AsyncMock()
+            mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = mock_response_data
             mock_client.post.return_value = mock_response
             mock_client_class.return_value.__aenter__.return_value = mock_client
             
-            with pytest.raises(Exception) as exc_info:
+            with pytest.raises(HTTPException) as exc_info:
                 await oauth._exchange_code_for_tokens("invalid_code")
             
-            assert "OAuth error: invalid_code" in str(exc_info.value)
+            assert exc_info.value.status_code == 400
+            assert exc_info.value.detail == "OAuth error: invalid_code"
     
     @pytest.mark.asyncio
     async def test_get_team_info_success(self, oauth):
@@ -127,7 +133,7 @@ class TestSlackOAuth:
         
         with patch('httpx.AsyncClient') as mock_client_class:
             mock_client = AsyncMock()
-            mock_response = AsyncMock()
+            mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = mock_response_data
             mock_client.post.return_value = mock_response

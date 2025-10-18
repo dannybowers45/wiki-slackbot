@@ -1,4 +1,5 @@
 import os
+import json
 import secrets
 from typing import List
 from fastapi import FastAPI, Request, Depends, HTTPException, Form
@@ -18,7 +19,6 @@ load_dotenv()
 app = FastAPI(
     title="Wikipedia Q&A Slackbot",
     description="A Slack bot that answers questions using Wikipedia with citations",
-    version="1.0.0"
 )
 
 # Create database tables
@@ -26,9 +26,10 @@ create_db_and_tables()
 
 # Setup templates and static files
 templates = Jinja2Templates(directory="app/templates")
+templates.env.filters["from_json"] = json.loads
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# Store OAuth states temporarily (in production, use Redis or database)
+# Store OAuth states temporarily (in real production, maybe use Redis or database)
 oauth_states = {}
 
 
@@ -90,11 +91,11 @@ async def oauth_callback(
                 <div class="info">
                     <h3>How to use:</h3>
                     <ul>
-                        <li>Use the <code>/ask</code> command: <code>/ask What is machine learning?</code></li>
-                        <li>Mention the bot: <code>@Wikipedia Q&A What is artificial intelligence?</code></li>
+                        <li>Use the <code>/wiki</code> command: <code>/wiki What is machine learning?</code></li>
+                        <li>Mention the bot: <code>@danny-wiki What is artificial intelligence?</code></li>
                         <li>Send a direct message to the bot</li>
                     </ul>
-                    <p>The bot will search Wikipedia and provide answers with citations. You can ask follow-up questions in threads!</p>
+                    <p>The bot will search Wikipedia, adjust the answer with an openAI LLM and provide answers with citations</p>
                 </div>
             </body>
         </html>
@@ -188,7 +189,7 @@ app.post("/slack/events")(slack_events)
 app.post("/slack/commands")(slack_commands)
 app.post("/slack/interactive")(slack_interactive)
 
-
+# For troubleshooting
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""

@@ -3,9 +3,11 @@ import re
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
+from html import unescape
 from .wiki_client import WikipediaClient, SearchResult, WikipediaArticle
 from .models import ConversationState
 from .db import get_db_session
+from .openai_client import openai_client, OpenAIClientError
 
 
 @dataclass
@@ -59,7 +61,7 @@ class QAService:
                 citations.append(Citation(
                     title=article.title,
                     url=article.url,
-                    snippet=result.snippet,
+                    snippet=self._clean_snippet(result.snippet),
                     page_id=article.page_id
                 ))
         
@@ -69,14 +71,27 @@ class QAService:
                 citations=[Citation(
                     title=result.title,
                     url=result.url,
-                    snippet=result.snippet,
+                    snippet=self._clean_snippet(result.snippet),
                     page_id=result.page_id
                 ) for result in search_results[:2]],
                 conversation_id=conversation_id
             )
         
-        # Synthesize answer from articles
-        answer = self._synthesize_answer(question, articles, context)
+        summary_text: Optional[str] = None
+        for article in articles:
+            summary_text = await self._summarize_with_openai(
+                question=question,
+                article=article,
+                context=context
+            )
+            if summary_text:
+                break
+
+        if summary_text:
+            answer_text = summary_text
+        else:
+            # Fallback to internal synthesis
+            answer_text = self._synthesize_answer(question, articles, context)
         
         # Update conversation context
         if conversation_id and installation_id:
@@ -84,11 +99,11 @@ class QAService:
                 conversation_id, 
                 installation_id, 
                 question, 
-                answer.answer
+                answer_text
             )
         
         return QAAnswer(
-            answer=answer,
+            answer=answer_text,
             citations=citations,
             conversation_id=conversation_id
         )
@@ -260,21 +275,76 @@ class QAService:
         if not citations:
             return ""
         
-        citation_text = "\n\n*Sources:*\n"
-        for i, citation in enumerate(citations, 1):
-            # Truncate snippet if too long
-            snippet = citation.snippet
-            if len(snippet) > 100:
-                snippet = snippet[:97] + "..."
-            
-            citation_text += f"{i}. <{citation.url}|{citation.title}>\n"
-            citation_text += f"   _{snippet}_\n"
+        lines = ["\n\n*Sources:*"]
+        for citation in citations:
+            snippet = citation.snippet or ""
+            if "<" in snippet or "&" in snippet:
+                snippet = self._clean_snippet(snippet)
+            if snippet:
+                lines.append(f"- <{citation.url}|{citation.title}> — _{snippet}_")
+            else:
+                lines.append(f"- <{citation.url}|{citation.title}>")
         
-        return citation_text
+        return "\n".join(lines)
     
     async def close(self):
-        """Close the Wikipedia client"""
+        """Close downstream clients"""
         await self.wiki_client.close()
+        await openai_client.close()
+
+    async def _summarize_with_openai(
+        self,
+        question: str,
+        article: WikipediaArticle,
+        context: Optional[str]
+    ) -> Optional[str]:
+        """Summarize Wikipedia content using OpenAI, gracefully handling failures."""
+        wikipedia_lines = await self._gather_wikipedia_lines(article)
+
+        if not wikipedia_lines:
+            return None
+
+        try:
+            return await openai_client.summarize(
+                topic=question,
+                content=wikipedia_lines,
+                url=article.url,
+                context=context
+            )
+        except OpenAIClientError as exc:
+            print(f"OpenAI summarization failed: {exc}")
+            return None
+
+    async def _gather_wikipedia_lines(self, article: WikipediaArticle) -> Optional[str]:
+        """Return up to 10 informative lines from a Wikipedia article."""
+        content = await self.wiki_client.get_article_content(article.title)
+
+        if not content:
+            content = article.extract
+
+        if not content:
+            return None
+
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+
+        if not lines:
+            return None
+
+        return "\n".join(lines[:10])
+
+    def _clean_snippet(self, snippet: str) -> str:
+        """Strip HTML tags and shorten snippet for Slack output."""
+        if not snippet:
+            return ""
+        
+        text = unescape(snippet)
+        text = re.sub(r"<[^>]+>", "", text)
+        text = text.strip()
+        
+        if len(text) > 120:
+            text = text[:117].rstrip() + "..."
+        
+        return text
 
 
 # Global QA service instance
