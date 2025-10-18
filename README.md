@@ -10,7 +10,6 @@ A FastAPI web application with a Slack bot that answers questions using Wikipedi
 - **Web Interface**: HTML interface for installation and logs
 - **Database Logging**: All Q&A interactions stored with timestamps and viewable at <url>/logs 
 - **Security**: Slack signature verification and OAuth state validation
-- **Docker Support**: Easy deployment with Docker and docker-compose
 
 ## Quick Start
 
@@ -18,73 +17,6 @@ A FastAPI web application with a Slack bot that answers questions using Wikipedi
 
 - Python 3.11+
 - Slack App credentials
-- Docker (optional)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd wikipedia-slackbot
-   ```
-
-2. **Install dependencies**
-   ```bash
-   make install
-   # or
-   pip install -r requirements.txt
-   ```
-
-3. **Configure Slack Bot**
-   ```bash
-   Basic Information - App Credentials: 
-   Copy Client ID, Client Secret, Signing Secret, 
-   and later the Bot User OAuth token; 
-   place them (plus the generated bot user ID if you want the fallback) into your .env.
-
-   Under Scopes - Bot Token Scopes, add:
-   commands
-   chat:write
-   app_mentions:read
-   channels:history
-
-   Set redirect URL: 
-   https://<your-domain-or-ngrok>/oauth/callback
-
-   Slash Command: Under Features - Slash Commands 
-   create /wiki with Request URL https://<base-url>/slack/commands, 
-   short description (“Ask a question about any topic”), 
-   usage hint (“Wiki: What is machine learning?”), and save.
-
-   Event Subscriptions: Enable, 
-   set Request URL https://<base-url>/slack/events, 
-   subscribe the bot to app_mention and message.im.
-
-   Interactivity & Shortcuts: 
-   Enable with Request URL https://<base-url>/slack/interactive so interactive payloads reach the app.
-
-   OAuth & Permissions:
-   Redirect URLs: add https://<your-domain-or-ngrok>/oauth/callback (match APP_BASE_URL).
-   Bot Token Scopes: commands, chat:write, app_mentions:read, im:history, users:read, team:read.
-
-   ```
-
-4. **Setup environment**
-   ```bash
-   cp env.example .env
-   # Edit .env with your necessary Slack app credentials
-   ```
-
-5. **Run the application**
-   ```bash
-   make dev
-   # or
-   uvicorn app.main:app --reload
-   ```
-
-6. **Visit the web interface**
-   - Open https server (./start_ngrok.sh)  
-   - Click "Connect to Slack" to install the bot
 
 ## Slack App Setup
 
@@ -131,6 +63,38 @@ Copy these values to your `.env` file:
 - **Signing Secret** → `SLACK_SIGNING_SECRET`
 - **Client ID** → `SLACK_CLIENT_ID`
 - **Client Secret** → `SLACK_CLIENT_SECRET`
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd wikipedia-slackbot
+   ```
+
+2. **Install dependencies**
+   ```bash
+   make install
+   # or
+   pip install -r requirements.txt
+   ```
+
+4. **Setup environment**
+   ```bash
+   cp env.example .env
+   # Edit .env with your necessary Slack app credentials
+   ```
+
+5. **Run the application**
+   ```bash
+   make dev
+   # or
+   uvicorn app.main:app --reload
+   ```
+
+6. **Visit the web interface**
+   - Open https server
+   - Click "Connect to Slack" to install the bot
 
 ## Configuration
 
@@ -199,10 +163,7 @@ wikipedia-slackbot/
 │   ├── static/              # Static files
 │   └── tests/               # Test suite
 ├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
 ├── Makefile
-├── slack_app_manifest.yaml
 └── README.md
 ```
 
@@ -215,10 +176,6 @@ make test         # Run tests
 make install      # Install dependencies
 make clean        # Clean up files
 
-# Docker
-make docker-build # Build Docker image
-make docker-up    # Start with docker-compose
-```
 
 ### Testing
 
@@ -233,41 +190,12 @@ pytest app/tests/test_wiki_client.py -v
 pytest app/tests/ --cov=app --cov-report=html
 ```
 
-## Deployment
 
-### Docker Deployment
-
-1. **Environment setup**
-   ```bash
-   # Copy and edit environment file
-   cp env.example .env
-   # Update with production values
-   ```
-
-2. **Production considerations**
+**Production considerations**
    - Use HTTPS in production (place certs in `ssl/` for the nginx profile)
    - Move to a production database (e.g., PostgreSQL) and update `DATABASE_URL`
    - Configure logging/monitoring
 
-### Manual Deployment
-
-1. **Install dependencies in virtual env**
-   ```bash
-   python3 -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-2. **Set environment variables**
-   ```bash
-   export SLACK_BOT_TOKEN="your-token"
-   export SLACK_SIGNING_SECRET="your-secret"
-   # ... other variables - see env.example
-   ```
-
-3. **Run the application**
-   ```bash
-   uvicorn app.main:app --host 0.0.0.0 --port 8000
-   ```
 
 ## Architecture
 
