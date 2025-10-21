@@ -51,7 +51,7 @@ A FastAPI web application with a Slack bot that answers questions using Wikipedi
 
 1. Go to "Event Subscriptions"
 2. Enable Events: On
-3. Request URL: `https://danny-bowers-wikipedia-slackbot-production.up.railway.app//slack/events`
+3. Request URL: `https://yourdomain.com/slack/events`
 4. Subscribe to bot events:
    - `app_mention`
    - `message.im`
@@ -93,7 +93,7 @@ Copy these values to your `.env` file:
    ```
 
 6. **Visit the web interface**
-   - Open https server
+   - Open `http://yourdomain.com`
    - Click "Connect to Slack" to install the bot
 
 ## Configuration
@@ -123,6 +123,7 @@ WIKIPEDIA_API_URL=https://en.wikipedia.org/api/rest_v1
 
 - **Citations**: All answers include Wikipedia sources with clickable links
 - **Web Logs**: View all Q&A interactions at `/logs`
+- **Context Memory (limited)**: Ask follow up questions and the bot will have context from the previous answer
 
 ## API Endpoints
 
