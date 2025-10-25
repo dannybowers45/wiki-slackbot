@@ -17,7 +17,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 
 
 class SlackOAuth:
+    """Encapsulates the Slack OAuth flow and installation lifecycle management."""
     def __init__(self):
+        """Load Slack credentials and base configuration from environment variables."""
         self.client_id = SLACK_CLIENT_ID
         self.client_secret = SLACK_CLIENT_SECRET
         self.base_url = APP_BASE_URL
@@ -27,7 +29,13 @@ class SlackOAuth:
             raise ValueError("SLACK_CLIENT_ID and SLACK_CLIENT_SECRET must be set")
     
     def generate_oauth_url(self) -> tuple[str, str]:
-        """Generate OAuth URL and state for Slack installation"""
+        """
+        Build the Slack installation URL alongside a one-time anti-CSRF state.
+
+        Returns
+            tuple[str, str]: Pair containing the OAuth URL for the "Add to Slack" button and the
+                        random state token that must be echoed back during the callback.
+        """
         state = secrets.token_urlsafe(32)
         
         params = {
@@ -46,7 +54,18 @@ class SlackOAuth:
         state: str, 
         expected_state: str
     ) -> Dict[str, Any]:
-        """Handle OAuth callback and exchange code for tokens"""
+        """
+        Complete the OAuth exchange and persist the resulting installation.
+
+        Parameters
+            code: Temporary authorization code supplied by Slack.
+            state: State value returned by Slack, expected to match `expected_state`.
+            expected_state: Value generated during `/install`; allows the caller to supply the
+                            previously stored state token for validation.
+
+        Returns
+            Dict[str, Any]: Summary of the stored installation including team details and bot id.
+        """
         
         # Verify state parameter
         if state != expected_state:
@@ -70,7 +89,15 @@ class SlackOAuth:
         }
     
     async def _exchange_code_for_tokens(self, code: str) -> Dict[str, Any]:
-        """Exchange OAuth code for access tokens"""
+        """
+        Swap a temporary authorization code for Slack bot and user tokens.
+
+        Parameters
+            code: Short-lived code provided by Slack after the user authorizes the app.
+
+        Returns
+            Dict[str, Any]: Raw response payload from Slack containing tokens, scopes, and user info.
+        """
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://slack.com/api/oauth.v2.access",
@@ -96,7 +123,16 @@ class SlackOAuth:
             return data
     
     async def _get_team_info(self, access_token: str) -> Dict[str, Any]:
-        """Get team information using access token"""
+        """
+        Retrieve metadata about the Slack workspace that installed the app.
+
+        Parameters
+            access_token: Access token returned by the OAuth exchange; required for the
+                      `team.info` API call.
+
+        Returns
+            Dict[str, Any]: Team details (id, name) used for persistence and UI messaging.
+        """
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://slack.com/api/team.info",
@@ -124,7 +160,16 @@ class SlackOAuth:
         token_data: Dict[str, Any], 
         team_info: Dict[str, Any]
     ) -> Installation:
-        """Store installation data in database"""
+        """
+        Persist or update the installation record in the database.
+
+        Parameters
+            token_data: Payload returned by Slack's OAuth exchange, containing bot tokens.
+            team_info: Workspace metadata returned by `team.info`.
+
+        Returns
+            Installation: Newly created or updated SQLModel instance representing the install.
+        """
         session = get_db_session()
         
         try:
@@ -169,7 +214,15 @@ class SlackOAuth:
             session.close()
     
     def get_installation_by_team_id(self, team_id: str) -> Optional[Installation]:
-        """Get installation by team ID"""
+        """
+        Fetch an active installation for the given Slack workspace id.
+
+        Parameters
+            team_id: Slack workspace identifier supplied in the incoming event payload.
+
+        Returns
+            Optional[Installation]: Active installation when present, otherwise `None`.
+        """
         session = get_db_session()
         try:
             return session.query(Installation).filter(
@@ -180,7 +233,16 @@ class SlackOAuth:
             session.close()
     
     def deactivate_installation(self, team_id: str) -> bool:
-        """Deactivate installation"""
+        """
+        Soft-delete an installation when Slack reports the app was uninstalled.
+
+        Parameters
+            team_id:
+                Workspace identifier received from Slack's `app_uninstalled` event.
+
+        Returns
+            bool: `True` when an installation was found and deactivated, `False` if no matching record exists.
+        """
         session = get_db_session()
         try:
             installation = session.query(Installation).filter(
