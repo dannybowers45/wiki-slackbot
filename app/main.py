@@ -95,7 +95,6 @@ async def oauth_callback(
                     <ul>
                         <li>Use the <code>/wiki</code> command: <code>/wiki What is machine learning?</code></li>
                         <li>Mention the bot: <code>@danny-wiki What is artificial intelligence?</code></li>
-                        <li>Send a direct message to the bot</li>
                     </ul>
                     <p>The bot will search Wikipedia, adjust the answer with an openAI LLM and provide answers with citations</p>
                 </div>

@@ -84,6 +84,26 @@ class TestQAService:
             assert "found some search results but couldn't retrieve" in answer.answer
             assert len(answer.citations) == 2  # Should still have search result citations
     
+    @pytest.mark.asyncio
+    async def test_answer_question_rewrites_follow_up(self, qa_service, mock_search_results, mock_articles):
+        """Ensure follow-up questions can be rewritten using context before search."""
+        with patch.object(qa_service, '_get_conversation_context', new=AsyncMock(return_value="Penicillin was discovered by Alexander Fleming in 1928.")), \
+             patch.object(qa_service, '_rewrite_question_with_context', new=AsyncMock(return_value="When was penicillin discovered?")) as mock_rewrite, \
+             patch.object(qa_service.wiki_client, 'search', new=AsyncMock(return_value=mock_search_results)) as mock_search, \
+             patch.object(qa_service.wiki_client, 'get_article', new=AsyncMock(side_effect=mock_articles)), \
+             patch.object(qa_service, '_update_conversation_context', new=AsyncMock()), \
+             patch.object(qa_service, '_summarize_with_openai', new=AsyncMock(return_value="It was discovered in 1928.")):
+            
+            answer = await qa_service.answer_question(
+                "When was it discovered?",
+                conversation_id="team_channel",
+                installation_id=1
+            )
+
+            assert isinstance(answer, QAAnswer)
+            mock_rewrite.assert_awaited_once()
+            mock_search.assert_awaited_once_with("When was penicillin discovered?", limit=3)
+    
     def test_synthesize_answer(self, qa_service, mock_articles):
         """Test answer synthesis from articles"""
         question = "What is machine learning?"

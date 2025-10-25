@@ -25,7 +25,32 @@ SLACK_BOT_USER_ID = os.getenv("SLACK_BOT_USER_ID")
 
 
 async def authorize(enterprise_id, team_id, logger, **kwargs) -> Optional[AuthorizeResult]:
-    """Fetch Slack installation credentials for the requesting team."""
+    """
+    Resolve OAuth credentials for the workspace making a Slack API call.
+
+    Parameters
+    ----------
+    enterprise_id:
+        Slack enterprise grid id when present (unused but part of the contract).
+    team_id:
+        Workspace identifier used to locate the stored installation.
+    logger:
+        Bolt logger which we use for verbose diagnostics.
+    **kwargs:
+        Additional values supplied by Bolt (not used).
+
+    Returns
+    -------
+    Optional[AuthorizeResult]
+        Returns an `AuthorizeResult` populated with the correct bot token and user
+        id when we locate a matching installation, or falls back to environment
+        variables for local development. `None` signals Bolt to reject the request.
+
+    Notes
+    -----
+    This layer is critical for multi-workspace support; without it every request
+    would share a single bot token and cross-team traffic would fail with `invalid_auth`.
+    """
     installation = slack_oauth.get_installation_by_team_id(team_id)
     if installation:
         return AuthorizeResult(
@@ -61,7 +86,25 @@ handler = AsyncSlackRequestHandler(app)
 
 
 async def verify_slack_signature(request: Request) -> bool:
-    """Verify Slack request signature"""
+    """
+    Validate that an inbound HTTP request truly originated from Slack.
+
+    Parameters
+    ----------
+    request:
+        The incoming FastAPI request containing Slack headers and body payload.
+
+    Returns
+    -------
+    bool
+        `True` when the signature and timestamp checks pass, `False` otherwise.
+
+    Security
+    --------
+    We recompute the expected HMAC (hash based message authentication code) using the configured signing secret and reject
+    replayed requests that fall outside a five-minute tolerance window. This
+    mirrors Slack's official verification recipe to guard against spoofed events.
+    """
     if not SLACK_SIGNING_SECRET:
         return True
     
@@ -91,7 +134,23 @@ async def verify_slack_signature(request: Request) -> bool:
 
 @app.command("/wiki")
 async def handle_wiki_command(ack, body, client, logger):
-    """Handle /wiki slash command"""
+    """
+    Process the `/wiki` slash command end to end.
+
+    Workflow
+    --------
+    1. Acknowledge the command immediately to satisfy Slack's 3 second SLA.
+    2. Resolve the installation to obtain a bot token scoped to the workspace.
+    3. Validate that the user provided text, derive a conversation id, and hand
+       the question to the QA service.
+    4. Post the synthesized answer (complete with citations) back to the channel.
+    5. Persist the full interaction for later analytics via `_store_qa_request`.
+
+    Error Handling
+    --------------
+    Any errors surfaced while acknowledging or handling the command are logged and
+    surfaced to the user with a friendly message so the Slack workflow never stalls.
+    """
     try:
         await ack(
             response_type="ephemeral",
@@ -193,7 +252,22 @@ async def handle_wiki_command(ack, body, client, logger):
 
 @app.event("app_mention")
 async def handle_app_mention(event, client, logger):
-    """Handle app mentions"""
+    """
+    Respond to channel messages that directly mention the bot.
+
+    The handler strips the mention component from the Slack text, treats the
+    remainder as a user question, and reuses the same QA pipeline as the slash
+    command. Answers are posted in-thread to keep conversations tidy.
+
+    Parameters
+    ----------
+    event:
+        Raw Slack event payload containing user, channel, and text information.
+    client:
+        Slack WebClient bound to the workspace-scoped bot token.
+    logger:
+        Logger provided by Bolt for structured diagnostics.
+    """
 
     try:
         # Get installation
@@ -259,7 +333,14 @@ async def handle_app_mention(event, client, logger):
 
 @app.event("message")
 async def handle_direct_message(event, client, logger):
-    """Handle direct messages"""
+    """
+    Deliver answers for direct messages in Slack.
+
+    We only react to 1:1 conversations (channel_type == "im") and ignore messages
+    emitted by bots to prevent feedback loops. A unique conversation id including
+    the user id is generated so the QA service can maintain private context and
+    memory per direct message thread.
+    """
     try:
         if event.get("channel_type") != "im":
             return
@@ -327,9 +408,36 @@ async def _store_qa_request(
     thread_ts: Optional[str] = None,
     conversation_id: Optional[str] = None
 ):
-    """Store Q&A request in database"""
+    """
+    Persist a completed Q&A exchange to the database.
+
+    Parameters
+    ----------
+    installation_id:
+        Foreign key tying the interaction back to the Slack workspace.
+    question:
+        Raw question text received from the Slack user.
+    answer:
+        Formatted answer generated by the QA service.
+    citations:
+        JSON-encoded list of citation metadata appended to the response.
+    user_id:
+        Slack user identifier who asked the question.
+    channel_id:
+        Channel or DM id where the conversation took place.
+    thread_ts:
+        Optional thread timestamp when the answer was delivered in-thread.
+    conversation_id:
+        Stable identifier used by the QA service to store/resume context.
+
+    Notes
+    -----
+    Database operations are executed inside a background thread via
+    `asyncio.to_thread` so the async Slack handlers remain non-blocking.
+    """
 
     def _persist():
+        """Write the QARequest record using a synchronous SQLModel session."""
         session = get_db_session()
         try:
             qa_request = QARequest(
@@ -355,7 +463,13 @@ async def _store_qa_request(
 
 # FastAPI endpoints for Slack
 async def slack_events(request: Request):
-    """Handle Slack events"""
+    """
+    FastAPI entry point for Slack event subscriptions.
+
+    The function validates the signature and delegates the heavy lifting to Bolt's
+    request handler. Any invalid signature results in a 400 error so Slack can
+    retry or mark the request as failed.
+    """
     if not await verify_slack_signature(request):
         raise HTTPException(status_code=400, detail="Invalid signature")
     
@@ -363,7 +477,12 @@ async def slack_events(request: Request):
 
 
 async def slack_commands(request: Request):
-    """Handle Slack commands"""
+    """
+    FastAPI bridge for Slack slash command invocations.
+
+    Identical to `slack_events` but dedicated to `/commands` traffic so the routing
+    in `app.main` stays explicit and maintainable.
+    """
     if not await verify_slack_signature(request):
         raise HTTPException(status_code=400, detail="Invalid signature")
     
@@ -371,7 +490,12 @@ async def slack_commands(request: Request):
 
 
 async def slack_interactive(request: Request):
-    """Handle Slack interactive components"""
+    """
+    FastAPI bridge for interactive payloads (buttons, select menus, modals).
+
+    Even though the current app does not register interactive handlers, we keep
+    the endpoint wired so future UX improvements only require adding Bolt listeners.
+    """
     if not await verify_slack_signature(request):
         raise HTTPException(status_code=400, detail="Invalid signature")
     
