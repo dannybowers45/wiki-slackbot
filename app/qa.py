@@ -39,9 +39,15 @@ class QAService:
         
         # Get conversation context if available
         context = await self._get_conversation_context(conversation_id, installation_id)
+        query_question = question
+
+        if context and self._should_rewrite_question(question):
+            rewritten = await self._rewrite_question_with_context(question, context)
+            if rewritten:
+                query_question = rewritten
         
         # Search for relevant articles
-        search_results = await self.wiki_client.search(question, limit=3)
+        search_results = await self.wiki_client.search(query_question, limit=3)
         
         if not search_results:
             return QAAnswer(
@@ -80,7 +86,7 @@ class QAService:
         summary_text: Optional[str] = None
         for article in articles:
             summary_text = await self._summarize_with_openai(
-                question=question,
+                question=query_question,
                 article=article,
                 context=context
             )
@@ -91,7 +97,8 @@ class QAService:
             answer_text = summary_text
         else:
             # Fallback to internal synthesis
-            answer_text = self._synthesize_answer(question, articles, context)
+            synth_question = query_question or question
+            answer_text = self._synthesize_answer(synth_question, articles, context)
         
         # Update conversation context
         if conversation_id and installation_id:
@@ -291,6 +298,41 @@ class QAService:
         """Close downstream clients"""
         await self.wiki_client.close()
         await openai_client.close()
+
+    def _should_rewrite_question(self, question: str) -> bool:
+        """Determine if a question likely needs context-aware rewriting."""
+        normalized = question.strip().lower()
+        if not normalized:
+            return False
+
+        word_count = len(normalized.split())
+        if word_count <= 4:
+            return True
+
+        pronouns = {
+            "it", "they", "them", "this", "that", "those", "these",
+            "he", "she", "him", "her", "there", "their"
+        }
+
+        return any(re.search(rf"\b{pronoun}\b", normalized) for pronoun in pronouns)
+
+    async def _rewrite_question_with_context(
+        self,
+        question: str,
+        context: str
+    ) -> Optional[str]:
+        """Use OpenAI to rewrite a follow-up question with explicit context."""
+        try:
+            return await openai_client.rewrite_question(
+                question=question,
+                context=context
+            )
+        except OpenAIClientError as exc:
+            print(f"OpenAI rewrite failed: {exc}")
+            return None
+        except Exception as exc:
+            print(f"Unexpected error rewriting question: {exc}")
+            return None
 
     async def _summarize_with_openai(
         self,

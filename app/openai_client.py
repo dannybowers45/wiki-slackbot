@@ -90,5 +90,51 @@ class OpenAIClient:
 
         return summary
 
+    async def rewrite_question(
+        self,
+        *,
+        question: str,
+        context: str
+    ) -> str:
+        """Rewrite a follow-up question so it stands alone with necessary context."""
+        client = self._ensure_client()
+
+        prompt = (
+            "You turn follow-up questions into complete stand-alone questions for Wikipedia search.\n"
+            "Keep the user's intent, inject the missing subject (only if there is a missing subject) from the context, and be concise.\n"
+            "Return only the rewritten question with no additional commentary.\n"
+            f"Conversation context:\n{context}\n\n"
+            f"Original question: {question}\n"
+        )
+
+        try:
+            if self._supports_responses:
+                response = await client.responses.create(
+                    model=self.model,
+                    input=prompt,
+                    temperature=0.2,
+                )
+                rewritten = (response.output_text or "").strip()
+            else:
+                chat = await client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You rewrite ambiguous follow-up questions so they stand alone."
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                )
+                rewritten = (chat.choices[0].message.content or "").strip()
+        except Exception as exc:
+            raise OpenAIClientError(f"OpenAI question rewrite failed: {exc}") from exc
+
+        if not rewritten:
+            raise OpenAIClientError("OpenAI returned an empty rewrite.")
+
+        return rewritten
+
 
 openai_client = OpenAIClient()
